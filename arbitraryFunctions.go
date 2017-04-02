@@ -1,5 +1,8 @@
 package sep
 
+import "strconv"
+import "time"
+
 var arbitraryFunctions map[string]func(...string)(string,error) = map[string]func(...string)(string,error){
 	"unixtime": func(_ ...string) (string, error) {
 		return strconv.FormatInt(time.Now().Unix(),10), nil
