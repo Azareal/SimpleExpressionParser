@@ -22,6 +22,7 @@ func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interfa
 	var currentBlock ArbitraryBlock
 	var blocks []ArbitraryBlock
 	var ntype int
+CharLoop:
 	for i:=0;i < len(command);i++ {
 		char := command[i]
 		switch(ntype) {
@@ -48,7 +49,7 @@ func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interfa
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:7}
 					ntype = 7
 				} else if char == '#' { // Comment, terminate the loop and don't evaluate further items
-					break
+					break CharLoop
 				} else if !unicode.IsSpace(rune(char)) {
 					return "Illegal character in arbitrary expression"
 				}
