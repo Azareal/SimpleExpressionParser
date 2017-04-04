@@ -6,9 +6,14 @@ import "unicode"
 import "errors"
 
 type Datastore interface {
+	VarExists(name string) bool
 	SetVar(name, value string) error
 	GetVar(name string) (string, bool)
 	DeleteVar(name string) error
+}
+
+type ArbitraryOptions struct {
+	Comments bool
 }
 
 type ArbitraryBlock struct {
@@ -18,10 +23,19 @@ type ArbitraryBlock struct {
 	Extra interface{}
 }
 
-func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interface{}) (out string) {
+func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interface{}) (out string, err error) {
+	return parseArbitraryBlock(command, ds, ArbitraryOptions{Comments:true}, 0, extra_data...)
+}
+
+func parseArbitraryBlock(command string, ds Datastore, options ArbitraryOptions, n int, extra_data ...interface{}) (out string, err error) {
+	if n > 5 {
+		return "", errors.New("too many nested calls x.x")
+	}
+	
 	var currentBlock ArbitraryBlock
 	var blocks []ArbitraryBlock
 	var ntype int
+	var brace_count int
 CharLoop:
 	for i:=0;i < len(command);i++ {
 		char := command[i]
@@ -49,9 +63,11 @@ CharLoop:
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:7}
 					ntype = 7
 				} else if char == '#' { // Comment, terminate the loop and don't evaluate further items
-					break CharLoop
-				} else if !unicode.IsSpace(rune(char)) {
-					return "Illegal character in arbitrary expression"
+					if options.Comments {
+						break CharLoop
+					}
+				} else if !unicode.IsSpace(rune(char)) && char != '`' {
+					return "", errors.New("Illegal character in arbitrary expression")
 				}
 			case 1: // Integer
 				if !('0' <= char && char <= '9') {
@@ -85,7 +101,7 @@ CharLoop:
 					currentBlock.Name = currentBlock.Contents
 					currentBlock.Contents, err = ResolveVariable(currentBlock.Name,ds)
 					if err != nil {
-						return err.Error()
+						return "", err
 					}
 					blocks = append(blocks, currentBlock)
 					ntype = 0
@@ -93,15 +109,22 @@ CharLoop:
 					currentBlock.Contents += string(char)
 				}
 			case 6: // Functions
+				if char == '(' {
+					brace_count++
+				}
 				if char == ')' {
-					res, err := ResolveArbitraryFunction(currentBlock.Name,currentBlock.Contents,ds,1)
-					if err != nil {
-						return err.Error()
+					if brace_count == 0 {
+						res, err := ResolveArbitraryFunction(currentBlock.Name,currentBlock.Contents,ds,n, extra_data...)
+						if err != nil {
+							return "", err
+						}
+						currentBlock.Contents = res
+						currentBlock.Type = 2
+						blocks = append(blocks, currentBlock)
+						ntype = 0
+					} else {
+						brace_count--
 					}
-					currentBlock.Contents = res
-					currentBlock.Type = 2
-					blocks = append(blocks, currentBlock)
-					ntype = 0
 				}
 				currentBlock.Contents += string(char)
 			case 7: // Operators
@@ -132,14 +155,14 @@ CharLoop:
 	}
 	if ntype != 0 {
 		if ntype == 6 {
-			return "there's an unclosed function call x.x"
+			return "", errors.New("there's an unclosed function call x.x")
 		}
 		if ntype == 5 {
 			var err error
 			currentBlock.Name = currentBlock.Contents
 			currentBlock.Contents, err = ResolveVariable(currentBlock.Name,ds)
 			if err != nil {
-				return err.Error()
+				return "", err
 			}
 		}
 		if ntype == 8 {
@@ -180,40 +203,40 @@ CharLoop:
 			}
 		} else if block.Type == 7 {
 			if (blockCount - 1) <= index {
-				return "Missing a right operand in the arbitrary expression"
+				return "", errors.New("Missing a right operand in the arbitrary expression")
 			}
 			if block.Contents == "!" {
 				continue
 			}
 			if index == 0 {
-				return "Missing a left operand in the arbitrary expression"
+				return "", errors.New("Missing a left operand in the arbitrary expression")
 			}
 			
 			prevtype := blocks[index - 1].Type
 			if prevtype == 7 {
-				return "You cannot have an operator next to another operator in an arbitrary expression"
+				return "", errors.New("You cannot have an operator next to another operator in an arbitrary expression")
 			}
 			
 			switch(block.Contents) {
-				case "+": return "+ not implemented"
-				case "-": return "- not implemented"
-				case "=": return "= not implemented"
-				case "++": return "++ not implemented"
-				case "--": return "-- not implemented"
-				case "+=": return "+= not implemented"
-				case "-=": return "-= not implemented"
-				case "/": return "/ not implemented"
-				case "==": return "== not implemented"
+				case "+": return "", errors.New("+ not implemented")
+				case "-": return "", errors.New("- not implemented")
+				case "=": return "", errors.New("= not implemented")
+				case "++": return "", errors.New("++ not implemented")
+				case "--": return "", errors.New("-- not implemented")
+				case "+=": return "", errors.New("+= not implemented")
+				case "-=": return "", errors.New("-= not implemented")
+				case "/": return "", errors.New("/ not implemented")
+				case "==": return "", errors.New("== not implemented")
 				case "&&":
 					previtem := blocks[index - 1]
 					nextitem := blocks[index + 1]
 					previtem_s, success := NormalizeBool(previtem.Contents)
 					if !success {
-						return "cannot coerce to bool"
+						return "", errors.New("cannot coerce to bool")
 					}
 					nextitem_s, success := NormalizeBool(nextitem.Contents)
 					if !success {
-						return "cannot coerce to bool"
+						return "", errors.New("cannot coerce to bool")
 					}
 					
 					if previtem_s == "true" && nextitem_s == "true" {
@@ -227,11 +250,11 @@ CharLoop:
 					nextitem := blocks[index + 1]
 					previtem_s, success := NormalizeBool(previtem.Contents)
 					if !success {
-						return "cannot coerce string to bool"
+						return "", errors.New("cannot coerce string to bool")
 					}
 					nextitem_s, success := NormalizeBool(nextitem.Contents)
 					if !success {
-						return "cannot coerce string to bool"
+						return "", errors.New("cannot coerce string to bool")
 					}
 					
 					if previtem_s == "true" || nextitem_s == "true" {
@@ -241,17 +264,17 @@ CharLoop:
 					}
 					index++
 				default:
-					return "Invalid operator"
+					return "", errors.New("Invalid operator")
 			}
 		} else {
-			return "Unable to reduce to string"
+			return "", errors.New("Unable to reduce to string")
 		}
 	}
 	
 	for _, item := range outbuf {
 		out += item
 	}
-	return out
+	return out, nil
 }
 
 func ResolveVariable(data string, ds Datastore) (result string, err error) {

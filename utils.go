@@ -42,7 +42,7 @@ func NormalizeBool(data string) (out string, success bool) {
 	data = strings.ToLower(data)
 	if data == "1" || data == "true" || data == "yes" {
 		return "true", true
-	} else if data == "0" || data == "false" || data == "no" {
+	} else if data == "0" || data == "false" || data == "no" || data == "o noes" {
 		return "false", true
 	} else {
 		return "false", false
