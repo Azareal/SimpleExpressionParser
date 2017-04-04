@@ -14,11 +14,11 @@ type Datastore interface {
 type ArbitraryBlock struct {
 	Name string
 	Contents string
-	Type int // 0: Unknown, 1: int, 2: string, 3: list, 4: map, 5: variable, 6: function, 7: operator, 8: literal
+	Type int // 0: Unknown, 1: int, 2: string, 3: list, 4: map, 5: variable, 6: function, 7: operator, 8: literal, 9: comment (unused for now, until I add comments which won't simply abort the loop)
 	Extra interface{}
 }
 
-func HandleArbitraryCommands(command string, server_data Datastore, extra_data ...interface{}) (out string) {
+func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interface{}) (out string) {
 	var currentBlock ArbitraryBlock
 	var blocks []ArbitraryBlock
 	var ntype int
@@ -47,6 +47,8 @@ func HandleArbitraryCommands(command string, server_data Datastore, extra_data .
 				} else if char == '+' || char == '-' || char == '=' || char == '/' || char == '!' || char == '&' || char == '|' {
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:7}
 					ntype = 7
+				} else if char == '#' { // Comment, terminate the loop and don't evaluate further items
+					break
 				} else if !unicode.IsSpace(rune(char)) {
 					return "Illegal character in arbitrary expression"
 				}
@@ -80,7 +82,7 @@ func HandleArbitraryCommands(command string, server_data Datastore, extra_data .
 				if char == ' ' {
 					var err error
 					currentBlock.Name = currentBlock.Contents
-					currentBlock.Contents, err = ResolveVariable(currentBlock.Name,server_data)
+					currentBlock.Contents, err = ResolveVariable(currentBlock.Name,ds)
 					if err != nil {
 						return err.Error()
 					}
@@ -91,7 +93,7 @@ func HandleArbitraryCommands(command string, server_data Datastore, extra_data .
 				}
 			case 6: // Functions
 				if char == ')' {
-					res, err := ResolveArbitraryFunction(currentBlock.Name,currentBlock.Contents,server_data,1)
+					res, err := ResolveArbitraryFunction(currentBlock.Name,currentBlock.Contents,ds,1)
 					if err != nil {
 						return err.Error()
 					}
@@ -134,7 +136,7 @@ func HandleArbitraryCommands(command string, server_data Datastore, extra_data .
 		if ntype == 5 {
 			var err error
 			currentBlock.Name = currentBlock.Contents
-			currentBlock.Contents, err = ResolveVariable(currentBlock.Name,server_data)
+			currentBlock.Contents, err = ResolveVariable(currentBlock.Name,ds)
 			if err != nil {
 				return err.Error()
 			}
@@ -195,6 +197,10 @@ func HandleArbitraryCommands(command string, server_data Datastore, extra_data .
 				case "+": return "+ not implemented"
 				case "-": return "- not implemented"
 				case "=": return "= not implemented"
+				case "++": return "++ not implemented"
+				case "--": return "-- not implemented"
+				case "+=": return "+= not implemented"
+				case "-=": return "-= not implemented"
 				case "/": return "/ not implemented"
 				case "==": return "== not implemented"
 				case "&&":
@@ -247,7 +253,7 @@ func HandleArbitraryCommands(command string, server_data Datastore, extra_data .
 	return out
 }
 
-func ResolveVariable(data string, server_data Datastore) (result string, err error) {
+func ResolveVariable(data string, ds Datastore) (result string, err error) {
 	if len(data) < 3 {
 		return "", errors.New("variable name too short x.x")
 	}
@@ -295,7 +301,7 @@ func ResolveVariable(data string, server_data Datastore) (result string, err err
 	}
 	
 	partCount := len(parts)
-	data_value, ok := server_data.GetVar(parts[0])
+	data_value, ok := ds.GetVar(parts[0])
 	if !ok {
 		return "", errors.New("this variable doesn't exist o.o")
 	}
@@ -347,7 +353,7 @@ func ResolveVariable(data string, server_data Datastore) (result string, err err
 				}
 				data_value = plist[list_index]
 			case "variable":
-				data_value, ok := server_data.GetVar(parts[0])
+				data_value, ok := ds.GetVar(parts[0])
 				if !ok {
 					return "", errors.New("subvariable doesn't exist o.o")
 				}

@@ -28,7 +28,7 @@ func HasArbitraryFunction(name string) bool {
 }
 
 
-func ResolveArbitraryFunction(name string, paramstr string, server_data Datastore, depth int) (result string, err error) {
+func ResolveArbitraryFunction(name string, paramstr string, ds Datastore, depth int) (result string, err error) {
 	callback, ok := arbitraryFunctions[name]
 	if !ok {
 		return "", errors.New("this function doesn't exist x.x")
