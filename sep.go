@@ -1,5 +1,6 @@
 package sep
 
+//import "fmt"
 import "strings"
 import "strconv"
 import "unicode"
@@ -14,17 +15,20 @@ type Datastore interface {
 
 type ArbitraryOptions struct {
 	Comments bool
+	Multiline bool
+	//ReadOnly bool
+	//WriteOnly bool
 }
 
 type ArbitraryBlock struct {
 	Name string
 	Contents string
-	Type int // 0: Unknown, 1: int, 2: string, 3: list, 4: map, 5: variable, 6: function, 7: operator, 8: literal, 9: comment (unused for now, until I add comments which won't simply abort the loop)
+	Type int // 0: Unknown, 1: int, 2: string, 3: list, 4: map, 5: variable, 6: function, 7: operator, 8: literal, 9: comment
 	Extra interface{}
 }
 
 func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interface{}) (out string, err error) {
-	return parseArbitraryBlock(command, ds, ArbitraryOptions{Comments:true}, 0, extra_data...)
+	return parseArbitraryBlock(command, ds, ArbitraryOptions{Comments:true,Multiline:true}, 0, extra_data...)
 }
 
 func parseArbitraryBlock(command string, ds Datastore, options ArbitraryOptions, n int, extra_data ...interface{}) (out string, err error) {
@@ -59,12 +63,16 @@ CharLoop:
 				} else if char == '*' {
 					currentBlock = ArbitraryBlock{Type:5}
 					ntype = 5
-				} else if char == '+' || char == '-' || char == '=' || char == '/' || char == '!' || char == '&' || char == '|' {
+				} else if char == '+' || char == '-' || char == '=' || char == '!' || char == '&' || char == '|' {
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:7}
 					ntype = 7
-				} else if char == '#' { // Comment, terminate the loop and don't evaluate further items
+				} else if char == '#' || char == '/' {
 					if options.Comments {
-						break CharLoop
+						if !options.Multiline {
+							break CharLoop
+						}
+						currentBlock = ArbitraryBlock{Contents:string(char),Type:9}
+						ntype = 9
 					}
 				} else if !unicode.IsSpace(rune(char)) && char != '`' {
 					return "", errors.New("Illegal character in arbitrary expression")
@@ -114,6 +122,29 @@ CharLoop:
 				}
 				if char == ')' {
 					if brace_count == 0 {
+						// Is this a control structure...?
+						if currentBlock.Name == "if" {
+							res, err := parseArbitraryBlock(currentBlock.Contents, ds, ArbitraryOptions{Comments:true,Multiline:true}, n + 1, extra_data...)
+							if err != nil {
+								return "", err
+							}
+							norm, ok := NormalizeBool(res)
+							if !ok {
+								return "", errors.New("if statements only accept boolean values")
+							}
+							
+							// Eat everything upto the next line
+							if norm == "false" {
+								for ; i < len(command);i++ {
+									if command[i] == 10 {
+										break
+									}
+								}
+							}
+							ntype = 0
+							continue
+						}
+						
 						res, err := ResolveArbitraryFunction(currentBlock.Name,currentBlock.Contents,ds,n, extra_data...)
 						if err != nil {
 							return "", err
@@ -140,6 +171,9 @@ CharLoop:
 					if currentBlock.Contents == "true" || currentBlock.Contents == "false" {
 						currentBlock.Type = 2
 					}
+					if currentBlock.Contents == "as" {
+						currentBlock.Type = 7
+					}
 					blocks = append(blocks, currentBlock)
 					ntype = 0
 				}
@@ -150,6 +184,29 @@ CharLoop:
 					ntype = 6
 				} else {
 					currentBlock.Contents += string(char)
+				}
+			case 9: // Comments
+				switch(currentBlock.Contents) {
+					case "/":
+						if char == '/' {
+							currentBlock.Contents = "//"
+						} else if char == '*' {
+							currentBlock.Contents = "/*"
+						} else {
+							//fmt.Println(char)
+							i--
+							currentBlock.Type = 7
+							ntype = 7
+						}
+					case "#","//":
+						if char == 10 { // Newline character
+							ntype = 0
+						}
+					case "/*":
+						if char == '*' && ((i + 1) < len(command)) && command[i + 1] == '/' {
+							ntype = 0
+							i++
+						}
 				}
 		}
 	}
@@ -170,8 +227,13 @@ CharLoop:
 			if currentBlock.Contents == "true" || currentBlock.Contents == "false" {
 				currentBlock.Type = 2
 			}
+			if currentBlock.Contents == "as" {
+				currentBlock.Type = 7
+			}
 		}
-		blocks = append(blocks, currentBlock)
+		if ntype != 9 {
+			blocks = append(blocks, currentBlock)
+		}
 	}
 	
 	var outbuf_cursor int = 0
@@ -221,6 +283,7 @@ CharLoop:
 				case "+": return "", errors.New("+ not implemented")
 				case "-": return "", errors.New("- not implemented")
 				case "=": return "", errors.New("= not implemented")
+				case "as": return "", errors.New("as not implemented")
 				case "++": return "", errors.New("++ not implemented")
 				case "--": return "", errors.New("-- not implemented")
 				case "+=": return "", errors.New("+= not implemented")
@@ -267,6 +330,8 @@ CharLoop:
 					return "", errors.New("Invalid operator")
 			}
 		} else {
+			//fmt.Println(ntype)
+			//fmt.Println(block)
 			return "", errors.New("Unable to reduce to string")
 		}
 	}
