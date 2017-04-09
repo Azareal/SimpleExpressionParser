@@ -16,8 +16,8 @@ type Datastore interface {
 type ArbitraryOptions struct {
 	Comments bool
 	Multiline bool
-	//ReadOnly bool
-	//WriteOnly bool
+	//EnableStoreVarRead bool
+	//EnableStoreVarWrite bool
 }
 
 type ArbitraryBlock struct {
@@ -40,6 +40,8 @@ func parseArbitraryBlock(command string, ds Datastore, options ArbitraryOptions,
 	var blocks []ArbitraryBlock
 	var ntype int
 	var brace_count int
+	var last_if int8 // Ternary value. -1, 0, 1. Needed to tell an else node whether it should eat it's block or not
+	
 CharLoop:
 	for i:=0;i < len(command);i++ {
 		char := command[i]
@@ -140,6 +142,9 @@ CharLoop:
 										break
 									}
 								}
+								last_if = -1
+							} else {
+								last_if = 1
 							}
 							ntype = 0
 							continue
@@ -173,6 +178,23 @@ CharLoop:
 					}
 					if currentBlock.Contents == "as" {
 						currentBlock.Type = 7
+					}
+					if currentBlock.Contents == "else" {
+						if last_if == 0 {
+							return "", errors.New("There's no if statement to match this else to!")
+						}
+						
+						// Eat everything upto the next line
+						if last_if == 1 {
+							for ; i < len(command);i++ {
+								if command[i] == 10 {
+									break
+								}
+							}
+						}
+						ntype = 0
+						last_if = 0
+						continue
 					}
 					blocks = append(blocks, currentBlock)
 					ntype = 0
