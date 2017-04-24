@@ -26,6 +26,14 @@ switch("ha")
 	"hm":"lolol",
 	"default text"
 }
+
+if(true)
+{
+	"run the code in this block"
+}
+
+if(true): "run the code on this line"
+
 ```
 
 # Progress
@@ -42,7 +50,7 @@ switch("ha")
 
 * Control Structures
 
-** If statements. The current syntax is likely to change in order to facilitate block statements.
+** If statements. Complete, we now have support for both line capture statements, and block capture statements :)
 
 ** If-else statements. A temporary implementation is up. Subject to change.
 

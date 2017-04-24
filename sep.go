@@ -78,10 +78,7 @@ CharLoop:
 						currentBlock = ArbitraryBlock{Contents:string(char),Type:9}
 						ntype = 9
 					}
-				case char == ':': // Magic break character, needed for Go style switches
-					lastIndex = i
-					break CharLoop
-				case !unicode.IsSpace(rune(char)) && char != '`':
+				case !unicode.IsSpace(rune(char)) && char != '`' && char != ':':
 					return "", i, errors.New("Illegal character '" + string(char) + "' in arbitrary expression")
 				}
 			case 1: // Integer
@@ -140,15 +137,53 @@ CharLoop:
 								return "", i, errors.New("if statements only accept boolean values")
 							}
 							
-							// Eat everything upto the next line
 							if norm == "false" {
-								for ; i < len(command);i++ {
-									if command[i] == 10 {
-										break
+								if len(command) > (i+1) {
+									// Eat everything upto the next line
+									if command[i+1] == ':' {
+										for ; i < len(command);i++ {
+											if command[i] == 10 {
+												break
+											}
+										}
+									} else { // Eat an entire block
+										// Jump to the next block
+										for ; (len(command) > i) && command[i] != '{' ;i++ {}
+										fmt.Println("current_pos",string(command[i]))
+										fmt.Println("pre i",command[0:i])
+										if len(command) > (i+1) {
+											i++
+											i = skipCurrentBlock(command,i)
+										}
+										fmt.Println("post i",command[0:i])
 									}
 								}
 								last_if = -1
 							} else {
+								if len(command) > (i+1) {
+									if command[i+1] != ':' {
+										// Jump to the next block
+										for ; (len(command) > i) && command[i] != '{' ;i++ {}
+										fmt.Println("current_pos",string(command[i]))
+										fmt.Println("pre i",command[0:i])
+										if len(command) > (i+1) {
+											i++
+											var startIndex int = i
+											i = skipCurrentBlock(command,i)
+											
+											res, _, err := parseArbitraryBlock(command[startIndex:i], ds, options, n + 1, extra_data...)
+											if err != nil {
+												return "", i, err
+											}
+											
+											currentBlock.Contents = res
+											currentBlock.Type = 2
+											blocks = append(blocks, currentBlock)
+										}
+										fmt.Println("post i",command[0:i])
+										
+									}
+								}
 								last_if = 1
 							}
 							ntype = 0
@@ -158,7 +193,7 @@ CharLoop:
 							if err != nil {
 								return "", i, err
 							}
-							fmt.Println("switch_text",switch_text)
+							//fmt.Println("switch_text",switch_text)
 							
 							var brace_count int = -1
 							var inner_text, default_text string
@@ -166,21 +201,18 @@ CharLoop:
 								char = command[i]
 								if char == '{' {
 									brace_count++
-									fmt.Println("brace_count++",brace_count)
 								} else if char == '}' {
 									if brace_count == 0 {
-										fmt.Println("brace break")
 										i = skipCurrentBlock(command,i)
 										break
 									}
 									brace_count--
-									fmt.Println("brace_count--",brace_count)
 								} else if char == ':' && inner_text != "" {
 									inner_text = strings.TrimSpace(inner_text)
 									if len(command) > (i+1) {
 										i++
 									}
-									fmt.Println("label",inner_text)
+									//fmt.Println("label",inner_text)
 									
 									startIndex := i
 									if inner_text != "default" {
@@ -188,7 +220,7 @@ CharLoop:
 										if err != nil {
 											return "", i, err
 										}
-										fmt.Println("res_label",res)
+										//fmt.Println("res_label",res)
 										
 										i = skipUntilChar(command,i,',')
 										inner_text = command[startIndex:i]
@@ -199,7 +231,6 @@ CharLoop:
 									} else {
 										i = skipUntilChar(command,i,',')
 										default_text = command[startIndex:i]
-										fmt.Println("default_text",default_text)
 									}
 									inner_text = ""
 								} else if char != ':' {
@@ -211,8 +242,8 @@ CharLoop:
 								return "", i, errors.New("You missed an opening brace for or within a switch block")
 							}
 							
-							fmt.Println("post inner_text",inner_text)
-							fmt.Println("post default_text",default_text)
+							//fmt.Println("post inner_text",inner_text)
+							//fmt.Println("post default_text",default_text)
 							if inner_text == "" && default_text != "" {
 								inner_text = default_text
 							}
