@@ -1,6 +1,6 @@
 package sep
 
-//import "fmt"
+import "fmt"
 import "strings"
 import "strconv"
 import "unicode"
@@ -27,48 +27,50 @@ type ArbitraryBlock struct {
 	Extra interface{}
 }
 
-func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interface{}) (out string, err error) {
+func HandleArbitraryCommands(command string, ds Datastore, extra_data ...interface{}) (out string, lastIndex int, err error) {
 	return parseArbitraryBlock(command, ds, ArbitraryOptions{Comments:true,Multiline:true}, 0, extra_data...)
 }
 
-func parseArbitraryBlock(command string, ds Datastore, options ArbitraryOptions, n int, extra_data ...interface{}) (out string, err error) {
+func parseArbitraryBlock(command string, ds Datastore, options ArbitraryOptions, n int, extra_data ...interface{}) (out string, lastIndex int, err error) {
 	if n > 5 {
-		return "", errors.New("too many nested calls x.x")
+		return "", -1, errors.New("too many nested calls x.x")
 	}
+	lastIndex = -1
 	
 	var currentBlock ArbitraryBlock
 	var blocks []ArbitraryBlock
-	var ntype int
-	var brace_count int
+	var ntype, brace_count int
 	var last_if int8 // Ternary value. -1, 0, 1. Needed to tell an else node whether it should eat it's block or not
 	
 CharLoop:
 	for i:=0;i < len(command);i++ {
 		char := command[i]
 		switch(ntype) {
-			case 0: // Unknown
-				if '0' <= char && char <= '9' {
+			case 0: // Unknown node
+				// Sniff the type of the next node
+				switch {
+				case '0' <= char && char <= '9':
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:1}
 					ntype = 1
-				} else if ('a' <= char && char <= 'z') || ('A' <= char && char <= 'Z') {
+				case ('a' <= char && char <= 'z') || ('A' <= char && char <= 'Z'):
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:8}
 					ntype = 8
-				} else if char == '"' {
+				case char == '"':
 					currentBlock = ArbitraryBlock{Type:2}
 					ntype = 2
-				} else if char == '[' {
+				case char == '[':
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:2}
 					ntype = 3
-				} else if char == '{' {
+				case char == '{':
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:2}
 					ntype = 4
-				} else if char == '*' {
+				case char == '*':
 					currentBlock = ArbitraryBlock{Type:5}
 					ntype = 5
-				} else if char == '+' || char == '-' || char == '=' || char == '!' || char == '&' || char == '|' {
+				case char == '+' || char == '-' || char == '=' || char == '!' || char == '&' || char == '|':
 					currentBlock = ArbitraryBlock{Contents:string(char),Type:7}
 					ntype = 7
-				} else if char == '#' || char == '/' {
+				case char == '#' || char == '/':
 					if options.Comments {
 						if !options.Multiline {
 							break CharLoop
@@ -76,8 +78,11 @@ CharLoop:
 						currentBlock = ArbitraryBlock{Contents:string(char),Type:9}
 						ntype = 9
 					}
-				} else if !unicode.IsSpace(rune(char)) && char != '`' {
-					return "", errors.New("Illegal character in arbitrary expression")
+				case char == ':': // Magic break character, needed for Go style switches
+					lastIndex = i
+					break CharLoop
+				case !unicode.IsSpace(rune(char)) && char != '`':
+					return "", i, errors.New("Illegal character '" + string(char) + "' in arbitrary expression")
 				}
 			case 1: // Integer
 				if !('0' <= char && char <= '9') {
@@ -107,11 +112,10 @@ CharLoop:
 				}
 			case 5: // Variable
 				if char == ' ' {
-					var err error
 					currentBlock.Name = currentBlock.Contents
 					currentBlock.Contents, err = ResolveVariable(currentBlock.Name,ds)
 					if err != nil {
-						return "", err
+						return "", i, err
 					}
 					blocks = append(blocks, currentBlock)
 					ntype = 0
@@ -126,13 +130,14 @@ CharLoop:
 					if brace_count == 0 {
 						// Is this a control structure...?
 						if currentBlock.Name == "if" {
-							res, err := parseArbitraryBlock(currentBlock.Contents, ds, ArbitraryOptions{Comments:true,Multiline:true}, n + 1, extra_data...)
+							res, _, err := parseArbitraryBlock(currentBlock.Contents, ds, options, n + 1, extra_data...)
 							if err != nil {
-								return "", err
+								return "", i, err
 							}
+							
 							norm, ok := NormalizeBool(res)
 							if !ok {
-								return "", errors.New("if statements only accept boolean values")
+								return "", i, errors.New("if statements only accept boolean values")
 							}
 							
 							// Eat everything upto the next line
@@ -148,12 +153,94 @@ CharLoop:
 							}
 							ntype = 0
 							continue
+						} else if currentBlock.Name == "switch" {
+							switch_text, _, err := parseArbitraryBlock(currentBlock.Contents, ds, options, n + 1, extra_data...)
+							if err != nil {
+								return "", i, err
+							}
+							fmt.Println("switch_text",switch_text)
+							
+							var brace_count int = -1
+							var inner_text, default_text string
+							for i++; i < len(command);i++ {
+								char = command[i]
+								if char == '{' {
+									brace_count++
+									fmt.Println("brace_count++",brace_count)
+								} else if char == '}' {
+									if brace_count == 0 {
+										fmt.Println("brace break")
+										i = skipCurrentBlock(command,i)
+										break
+									}
+									brace_count--
+									fmt.Println("brace_count--",brace_count)
+								} else if char == ':' && inner_text != "" {
+									inner_text = strings.TrimSpace(inner_text)
+									if len(command) > (i+1) {
+										i++
+									}
+									fmt.Println("label",inner_text)
+									
+									startIndex := i
+									if inner_text != "default" {
+										res, _, err := parseArbitraryBlock(inner_text, ds, options, n + 1, extra_data...)
+										if err != nil {
+											return "", i, err
+										}
+										fmt.Println("res_label",res)
+										
+										i = skipUntilChar(command,i,',')
+										inner_text = command[startIndex:i]
+										if res == switch_text {
+											i = skipCurrentBlock(command,i)
+											break
+										}
+									} else {
+										i = skipUntilChar(command,i,',')
+										default_text = command[startIndex:i]
+										fmt.Println("default_text",default_text)
+									}
+									inner_text = ""
+								} else if char != ':' {
+									inner_text += string(char)
+								}
+							}
+							
+							if brace_count < 0 {
+								return "", i, errors.New("You missed an opening brace for or within a switch block")
+							}
+							
+							fmt.Println("post inner_text",inner_text)
+							fmt.Println("post default_text",default_text)
+							if inner_text == "" && default_text != "" {
+								inner_text = default_text
+							}
+							if inner_text == "" {
+								ntype = 0
+								continue
+							}
+							
+							res, _, err := parseArbitraryBlock(inner_text, ds, options, n + 1, extra_data...)
+							if err != nil {
+								fmt.Println("Err:",err.Error())
+								fmt.Println("Data:",inner_text)
+								fmt.Println("Result:",res)
+								return "", i, err
+							}
+							
+							currentBlock.Contents = res
+							currentBlock.Type = 2
+							blocks = append(blocks, currentBlock)
+							ntype = 0
+							continue
 						}
 						
-						res, err := ResolveArbitraryFunction(currentBlock.Name,currentBlock.Contents,ds,n, extra_data...)
+						res, err := ResolveArbitraryFunction(currentBlock.Name,currentBlock.Contents,ds,n,extra_data...)
 						if err != nil {
-							return "", err
+							return "", i, err
 						}
+						
 						currentBlock.Contents = res
 						currentBlock.Type = 2
 						blocks = append(blocks, currentBlock)
@@ -179,9 +266,10 @@ CharLoop:
 					if currentBlock.Contents == "as" {
 						currentBlock.Type = 7
 					}
+					
 					if currentBlock.Contents == "else" {
 						if last_if == 0 {
-							return "", errors.New("There's no if statement to match this else to!")
+							return "", i, errors.New("There's no if statement to match this else to!")
 						}
 						
 						// Eat everything upto the next line
@@ -199,6 +287,7 @@ CharLoop:
 					blocks = append(blocks, currentBlock)
 					ntype = 0
 				}
+				
 				if char == '(' {
 					currentBlock.Name = currentBlock.Contents
 					currentBlock.Contents = ""
@@ -215,7 +304,6 @@ CharLoop:
 						} else if char == '*' {
 							currentBlock.Contents = "/*"
 						} else {
-							//fmt.Println(char)
 							i--
 							currentBlock.Type = 7
 							ntype = 7
@@ -234,16 +322,18 @@ CharLoop:
 	}
 	if ntype != 0 {
 		if ntype == 6 {
-			return "", errors.New("there's an unclosed function call x.x")
+			return "", lastIndex, errors.New("there's an unclosed function call x.x")
 		}
+		
 		if ntype == 5 {
 			var err error
 			currentBlock.Name = currentBlock.Contents
 			currentBlock.Contents, err = ResolveVariable(currentBlock.Name,ds)
 			if err != nil {
-				return "", err
+				return "", lastIndex, err
 			}
 		}
+		
 		if ntype == 8 {
 			currentBlock.Contents = strings.ToLower(currentBlock.Contents)
 			if currentBlock.Contents == "true" || currentBlock.Contents == "false" {
@@ -253,12 +343,13 @@ CharLoop:
 				currentBlock.Type = 7
 			}
 		}
+		
 		if ntype != 9 {
 			blocks = append(blocks, currentBlock)
 		}
 	}
 	
-	var outbuf_cursor int = 0
+	var outbuf_cursor int // = 0
 	var outbuf map[int]string = make(map[int]string)
 	var boolInvert bool
 	blockCount := len(blocks)
@@ -287,41 +378,43 @@ CharLoop:
 			}
 		} else if block.Type == 7 {
 			if (blockCount - 1) <= index {
-				return "", errors.New("Missing a right operand in the arbitrary expression")
+				return "", lastIndex, errors.New("Missing a right operand in the arbitrary expression")
 			}
 			if block.Contents == "!" {
 				continue
 			}
 			if index == 0 {
-				return "", errors.New("Missing a left operand in the arbitrary expression")
+				return "", lastIndex, errors.New("Missing a left operand in the arbitrary expression")
 			}
 			
 			prevtype := blocks[index - 1].Type
 			if prevtype == 7 {
-				return "", errors.New("You cannot have an operator next to another operator in an arbitrary expression")
+				return "", lastIndex, errors.New("You cannot have an operator next to another operator in an arbitrary expression")
 			}
 			
 			switch(block.Contents) {
-				case "+": return "", errors.New("+ not implemented")
-				case "-": return "", errors.New("- not implemented")
-				case "=": return "", errors.New("= not implemented")
-				case "as": return "", errors.New("as not implemented")
-				case "++": return "", errors.New("++ not implemented")
-				case "--": return "", errors.New("-- not implemented")
-				case "+=": return "", errors.New("+= not implemented")
-				case "-=": return "", errors.New("-= not implemented")
-				case "/": return "", errors.New("/ not implemented")
-				case "==": return "", errors.New("== not implemented")
+				case "+": return "", lastIndex, errors.New("+ not implemented")
+				case "-": return "", lastIndex, errors.New("- not implemented")
+				case "=": return "", lastIndex, errors.New("= not implemented")
+				case "as": return "", lastIndex, errors.New("as not implemented")
+				case "++": return "", lastIndex, errors.New("++ not implemented")
+				case "--": return "", lastIndex, errors.New("-- not implemented")
+				case "+=": return "", lastIndex, errors.New("+= not implemented")
+				case "-=": return "", lastIndex, errors.New("-= not implemented")
+				case "/": return "", lastIndex, errors.New("/ not implemented")
+				case "==": return "", lastIndex, errors.New("== not implemented")
 				case "&&":
 					previtem := blocks[index - 1]
 					nextitem := blocks[index + 1]
+					
 					previtem_s, success := NormalizeBool(previtem.Contents)
 					if !success {
-						return "", errors.New("cannot coerce to bool")
+						return "", lastIndex, errors.New("cannot coerce to bool")
 					}
+					
 					nextitem_s, success := NormalizeBool(nextitem.Contents)
 					if !success {
-						return "", errors.New("cannot coerce to bool")
+						return "", lastIndex, errors.New("cannot coerce to bool")
 					}
 					
 					if previtem_s == "true" && nextitem_s == "true" {
@@ -333,13 +426,15 @@ CharLoop:
 				case "||":
 					previtem := blocks[index - 1]
 					nextitem := blocks[index + 1]
+					
 					previtem_s, success := NormalizeBool(previtem.Contents)
 					if !success {
-						return "", errors.New("cannot coerce string to bool")
+						return "", lastIndex, errors.New("cannot coerce string to bool")
 					}
+					
 					nextitem_s, success := NormalizeBool(nextitem.Contents)
 					if !success {
-						return "", errors.New("cannot coerce string to bool")
+						return "", lastIndex, errors.New("cannot coerce string to bool")
 					}
 					
 					if previtem_s == "true" || nextitem_s == "true" {
@@ -349,19 +444,19 @@ CharLoop:
 					}
 					index++
 				default:
-					return "", errors.New("Invalid operator")
+					return "", lastIndex, errors.New("Invalid operator")
 			}
 		} else {
 			//fmt.Println(ntype)
 			//fmt.Println(block)
-			return "", errors.New("Unable to reduce to string")
+			return "", lastIndex, errors.New("Unable to reduce to string")
 		}
 	}
 	
 	for _, item := range outbuf {
 		out += item
 	}
-	return out, nil
+	return out, lastIndex, nil
 }
 
 func ResolveVariable(data string, ds Datastore) (result string, err error) {
@@ -416,6 +511,7 @@ func ResolveVariable(data string, ds Datastore) (result string, err error) {
 	if !ok {
 		return "", errors.New("this variable doesn't exist o.o")
 	}
+	
 	data_type := DetectType(data_value)
 	if data_type == "string" && partCount == 2 {
 		conv_data, err := strconv.Atoi(parts[1])
@@ -439,6 +535,7 @@ func ResolveVariable(data string, ds Datastore) (result string, err error) {
 		if n > 5 {
 			return "", errors.New("too many nested subelements")
 		}
+		
 		switch(data_type) {
 			case "map":
 				pmap, err := MapParser(data_value)
@@ -450,6 +547,7 @@ func ResolveVariable(data string, ds Datastore) (result string, err error) {
 					return "", errors.New("field does not exist in map")
 				}
 				data_value = pdata
+			
 			case "list":
 				plist, err := ListParser(data_value)
 				if err != nil {
@@ -463,6 +561,7 @@ func ResolveVariable(data string, ds Datastore) (result string, err error) {
 					return "", errors.New("index out of range o.o")
 				}
 				data_value = plist[list_index]
+			
 			case "variable":
 				data_value, ok := ds.GetVar(parts[0])
 				if !ok {
@@ -475,3 +574,86 @@ func ResolveVariable(data string, ds Datastore) (result string, err error) {
 	
 	return data_value, nil
 }
+
+func skipBlock(data string, index int) int {
+	var brace_count int
+	for ;index < len(data);index++{
+		char := data[index]
+		if char == '{' {
+			brace_count++
+		} else if char == '}' {
+			if brace_count == 0 {
+				return index
+			}
+			brace_count--
+		}
+	}
+	return index
+}
+
+func skipFunc(data string, index int) int {
+	var brace_count int
+	for ;index < len(data);index++{
+		char := data[index]
+		if char == '(' {
+			brace_count++
+		} else if char == ')' {
+			if brace_count == 0 {
+				return index
+			}
+			brace_count--
+		}
+	}
+	return index
+}
+
+func skipList(data string, index int) int {
+	var brace_count int
+	for ;index < len(data);index++{
+		char := data[index]
+		if char == '[' {
+			brace_count++
+		} else if char == ']' {
+			if brace_count == 0 {
+				return index
+			}
+			brace_count--
+		}
+	}
+	return index
+}
+
+func skipUntilChar(data string, index int, char byte) int {
+SwitchLoop:
+	for ; index < len(data);index++ {
+		switch(data[index]) {
+		case '{': index = skipBlock(data,index)
+		case '[': index = skipList(data,index)
+		case '(': index = skipFunc(data,index)
+		case '}':
+			if index != 0 {
+				index--
+			}
+			break SwitchLoop
+		case char: break SwitchLoop
+		}
+	}
+	return index
+}
+
+func skipCurrentBlock(data string, index int) int {
+SwitchLoop:
+	for ; index < len(data);index++ {
+		switch(data[index]) {
+		case '{': index = skipBlock(data,index)
+		case '[': index = skipList(data,index)
+		case '(': index = skipFunc(data,index)
+		case '}': break SwitchLoop
+		}
+	}
+	return index
+}
+
+/*func getBlockLastIndex() (index int) {
+	
+}*/

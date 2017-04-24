@@ -120,6 +120,7 @@ func ResolveArbitraryFunction(name string, paramstr string, ds Datastore, depth 
 	if reqParams == 0 {
 		return callback(ds,params...)
 	}
+	
 	if len(params) != reqParams {
 		if len(params) == 0 {
 			return "", errors.New("No parameters provided x.x")
@@ -130,12 +131,13 @@ func ResolveArbitraryFunction(name string, paramstr string, ds Datastore, depth 
 	}
 	
 	for index, param := range params {
-		res, err := parseArbitraryBlock(param, ds, ArbitraryOptions{Comments:false}, depth + 1, extra_data...)
+		res, _, err := parseArbitraryBlock(param, ds, ArbitraryOptions{Comments:false}, depth + 1, extra_data...)
 		if err != nil {
 			return "", err
 		}
 		params[index] = res
 	}
+	
 	return callback(ds, params...)
 }
 
@@ -152,7 +154,7 @@ func parseParams(paramstr string) (params []string, err error) {
 				params = append(params,buffer)
 				buffer = ""
 			}
-		} else if char > 32 {
+		} else if char > 32 { // 32 is whitespace. Below that are the special characters
 			buffer += string(char)
 		}
 	}
