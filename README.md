@@ -32,32 +32,32 @@ switch("ha")
 
 * Primitives.
 
-** Strings. Complete
+* * Strings. Complete
 
-** Integers. Incomplete. Integer arithmetic needs to be implemented.
+* * Integers. Incomplete. Integer arithmetic needs to be implemented.
 
-** Floats / Decimals. Still in the planning stages.
+* * Floats / Decimals. Still in the planning stages.
 
-** Maps. Incomplete. You can't access a specific key within it yet.
+* * Maps. Incomplete. You can't access a specific key within it yet.
 
 * Control Structures
 
-** If statements. The current syntax is likely to change in order to facilitate block statements.
+* * If statements. The current syntax is likely to change in order to facilitate block statements.
 
-** If-else statements. A temporary implementation is up. Subject to change.
+* * If-else statements. A temporary implementation is up. Subject to change.
 
-** Switches. Fully implemented. Arbitrary expressions can be used as labels, and it has a syntax similar to that of a map.
+* * Switches. Fully implemented. Arbitrary expressions can be used as labels, and it has a syntax similar to that of a map.
 
-** Loops. This is currently being planned out.
+* * Loops. This is currently being planned out.
 
 * Operators
 
-** Assignment Operator. Still in the planning stages.
+* * Assignment Operator. Still in the planning stages.
 
-** Concatenation. Complete. Two adjacent items without any seperator will fuse with each other. Is this the best way of doing it? We might need to rethink this.
+* * Concatenation. Complete. Two adjacent items without any seperator will fuse with each other. Is this the best way of doing it? We might need to rethink this.
 
-** AND and OR boolean logic. Complete.
+* * AND and OR boolean logic. Complete.
 
 * I/O
 
-** Printing. Loose strings are currently printed directly to the main output, as this is mostly used in my bot, this means the chat channel it's responding to. We might need to rethink this at some point.
+* * Printing. Loose strings are currently printed directly to the main output, as this is mostly used in my bot, this means the chat channel it's responding to. We might need to rethink this at some point.
