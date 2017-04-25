@@ -1,6 +1,6 @@
 package sep
 
-import "fmt"
+//import "fmt"
 import "strings"
 import "strconv"
 import "unicode"
@@ -149,13 +149,10 @@ CharLoop:
 									} else { // Eat an entire block
 										// Jump to the next block
 										for ; (len(command) > i) && command[i] != '{' ;i++ {}
-										fmt.Println("current_pos",string(command[i]))
-										fmt.Println("pre i",command[0:i])
 										if len(command) > (i+1) {
 											i++
 											i = skipCurrentBlock(command,i)
 										}
-										fmt.Println("post i",command[0:i])
 									}
 								}
 								last_if = -1
@@ -164,8 +161,6 @@ CharLoop:
 									if command[i+1] != ':' {
 										// Jump to the next block
 										for ; (len(command) > i) && command[i] != '{' ;i++ {}
-										fmt.Println("current_pos",string(command[i]))
-										fmt.Println("pre i",command[0:i])
 										if len(command) > (i+1) {
 											i++
 											var startIndex int = i
@@ -180,8 +175,6 @@ CharLoop:
 											currentBlock.Type = 2
 											blocks = append(blocks, currentBlock)
 										}
-										fmt.Println("post i",command[0:i])
-										
 									}
 								}
 								last_if = 1
@@ -193,7 +186,6 @@ CharLoop:
 							if err != nil {
 								return "", i, err
 							}
-							//fmt.Println("switch_text",switch_text)
 							
 							var brace_count int = -1
 							var inner_text, default_text string
@@ -212,7 +204,6 @@ CharLoop:
 									if len(command) > (i+1) {
 										i++
 									}
-									//fmt.Println("label",inner_text)
 									
 									startIndex := i
 									if inner_text != "default" {
@@ -220,7 +211,6 @@ CharLoop:
 										if err != nil {
 											return "", i, err
 										}
-										//fmt.Println("res_label",res)
 										
 										i = skipUntilChar(command,i,',')
 										inner_text = command[startIndex:i]
@@ -242,8 +232,6 @@ CharLoop:
 								return "", i, errors.New("You missed an opening brace for or within a switch block")
 							}
 							
-							//fmt.Println("post inner_text",inner_text)
-							//fmt.Println("post default_text",default_text)
 							if inner_text == "" && default_text != "" {
 								inner_text = default_text
 							}
@@ -254,9 +242,6 @@ CharLoop:
 							
 							res, _, err := parseArbitraryBlock(inner_text, ds, options, n + 1, extra_data...)
 							if err != nil {
-								fmt.Println("Err:",err.Error())
-								fmt.Println("Data:",inner_text)
-								fmt.Println("Result:",res)
 								return "", i, err
 							}
 							
@@ -303,12 +288,48 @@ CharLoop:
 							return "", i, errors.New("There's no if statement to match this else to!")
 						}
 						
-						// Eat everything upto the next line
-						if last_if == 1 {
-							for ; i < len(command);i++ {
-								if command[i] == 10 {
-									break
+						if len(command) > (i+1) {
+							if last_if == 1 {
+								// Eat everything upto the next line
+								if command[i] == ':' {
+									i = skipCurrentLine(command,i)
+								} else { // Eat an entire block
+									// Jump to the next block
+									for ; (len(command) > i) && command[i] != '{' ;i++ {}
+									if len(command) > (i+1) {
+										i++
+										i = skipCurrentBlock(command,i)
+									}
 								}
+							} else if command[i] != ':' {
+								// Jump to the next block
+								for ; (len(command) > i) && command[i] != '{' ;i++ {}
+								if len(command) > (i+1) {
+									i++
+									var startIndex int = i
+									i = skipCurrentBlock(command,i)
+									
+									res, _, err := parseArbitraryBlock(command[startIndex:i], ds, options, n + 1, extra_data...)
+									if err != nil {
+										return "", i, err
+									}
+									
+									currentBlock.Contents = res
+									currentBlock.Type = 2
+									blocks = append(blocks, currentBlock)
+								}
+							} else {
+								var startIndex int = i
+								i = skipCurrentLine(command,i)
+								
+								res, _, err := parseArbitraryBlock(command[startIndex:i], ds, options, n + 1, extra_data...)
+								if err != nil {
+									return "", i, err
+								}
+								
+								currentBlock.Contents = res
+								currentBlock.Type = 2
+								blocks = append(blocks, currentBlock)
 							}
 						}
 						ntype = 0
@@ -680,6 +701,15 @@ SwitchLoop:
 		case '[': index = skipList(data,index)
 		case '(': index = skipFunc(data,index)
 		case '}': break SwitchLoop
+		}
+	}
+	return index
+}
+
+func skipCurrentLine(data string, index int) int {
+	for ; index < len(data);index++ {
+		if data[index] == 10 {
+			return index
 		}
 	}
 	return index

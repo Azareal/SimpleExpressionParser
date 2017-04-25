@@ -26,7 +26,9 @@ switch("ha")
 	"hm":"lolol",
 	"default text"
 }
+```
 
+```
 if(true)
 {
 	"run the code in this block"
@@ -34,6 +36,15 @@ if(true)
 
 if(true): "run the code on this line"
 
+if(true): "run the code on this line"
+
+else: "or this line"
+
+if(true): "run the code on this line"
+
+else {
+	"or in this block"
+}
 ```
 
 # Progress
@@ -52,7 +63,7 @@ if(true): "run the code on this line"
 
   * If statements. Complete, we now have support for both line capture statements, and block capture statements :)
 
-  * If-else statements. A temporary implementation is up. Subject to change.
+  * If-else statements. Complete
 
   * Switches. Fully implemented. Arbitrary expressions can be used as labels, and it has a syntax similar to that of a map.
 
@@ -69,3 +80,11 @@ if(true): "run the code on this line"
 * I/O
 
   * Printing. Loose strings are currently printed directly to the main output, as this is mostly used in my bot, this means the chat channel it's responding to. We might need to rethink this at some point.
+
+* Misc
+
+  * Run file. Planning stages.
+
+* Opcode Compiler
+
+I plan to have an opcode compiler at some point, that is an alternate compilation mode which produces and consumes opcodes instead of text which will be much, much faster.
